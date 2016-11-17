@@ -1,9 +1,0 @@
-/* File : Codegen.i */
-%module codegen
-
-%{
-#include "src/Codegen.h"
-%}
-
-/* Let's just grab the original header file here */
-%include "src/Codegen.h"

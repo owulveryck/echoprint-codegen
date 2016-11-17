@@ -23,21 +23,21 @@ const (
 	alpha = 1.0 / t
 )
 
-var r = make([]float32, p)
-var xo = make([]float32, p)
-var ai = make([]float32, p)
+var r []float32
+var xo []float32
+var ai []float32
 
 // NewWhitening is the constructor
 func NewWhitening(pSamples *[]float32, numSamples uint64) *Whitening {
+	r = make([]float32, numSamples)
+	r[0] = 0.001
+	xo = make([]float32, numSamples)
+	ai = make([]float32, numSamples)
 	return &Whitening{
 		pSamples:   *pSamples,
 		numSamples: numSamples,
 		whitened:   make([]float32, len(*pSamples)),
 	}
-}
-
-func init() {
-	r[0] = 0.001
 }
 
 // Compute the result
@@ -48,7 +48,7 @@ func (w *Whitening) ComputeBlock(start, blockSize int) {
 	// calculate autocorrelation of current block
 	for i := 0; i <= p; i++ {
 		var acc float32
-		for j := 0; j < blockSize; j++ {
+		for j := i; j < blockSize; j++ {
 			acc += w.pSamples[j+start] * w.pSamples[j-i+start]
 		}
 		// smoothed update
@@ -60,12 +60,12 @@ func (w *Whitening) ComputeBlock(start, blockSize int) {
 	for i := 0; i <= p; i++ {
 		var sumAlphaR float32
 		sumAlphaR = 0
-		for j := 0; j <= p; j++ {
+		for j := 1; j <= i; j++ {
 			sumAlphaR += ai[j] * r[i-j]
 		}
 		ki := (r[i] - sumAlphaR) / E
 		ai[i] = ki
-		for j := 1; j <= i/2; i++ {
+		for j := 1; j <= i/2; j++ {
 			aj := ai[j]
 			aimj := ai[i-j]
 			ai[j] = aj - ki*aimj
