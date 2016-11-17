@@ -31,7 +31,7 @@ public:
     int getNumSamples() const {return _NumberSamples;}
     const float* getSamples() {return _pSamples;}
     double getDuration() { return (double)getNumSamples() / Params::AudioStreamInput::SamplingRate; }
-    virtual bool IsSupported(const char* pFileName); //Everything ffmpeg can do, by default
+    virtual bool IsSupported(const char* pFileName); //Everything avconv can do, by default
     int GetOffset() const { return _Offset_s;}
     int GetSeconds() const { return _Seconds;}
 protected:
@@ -54,25 +54,25 @@ protected:
     virtual std::string GetCommandLine(const char* filename){return "";} // hack
 };
 
-class FfmpegStreamInput : public AudioStreamInput {
+class avconvStreamInput : public AudioStreamInput {
 public:
-    std::string GetName(){return "ffmpeg";};
+    std::string GetName(){return "avconv";};
 protected:
     std::string GetCommandLine(const char* filename) {
         // TODO: Windows
         char message[4096] = {0};
         if (_Offset_s == 0 && _Seconds == 0)
-            snprintf(message, NELEM(message), "ffmpeg -i \"%s\"  -ac %d -ar %d -f s16le - 2>%s",
+            snprintf(message, NELEM(message), "avconv -i \"%s\"  -ac %d -ar %d -f s16le - 2>%s",
                     filename, Params::AudioStreamInput::Channels, (uint) Params::AudioStreamInput::SamplingRate, DEVNULL);
         else
-            snprintf(message, NELEM(message), "ffmpeg -i \"%s\"  -ac %d -ar %d -f s16le -t %d -ss %d - 2>%s",
+            snprintf(message, NELEM(message), "avconv -i \"%s\"  -ac %d -ar %d -f s16le -t %d -ss %d - 2>%s",
                     filename, Params::AudioStreamInput::Channels, (uint) Params::AudioStreamInput::SamplingRate, _Seconds, _Offset_s, DEVNULL);
 
         return std::string(message);
     }
 };
 
-namespace FFMPEG {
+namespace avconv {
     bool IsAudioFile(const char* pFileName);
 };
 
