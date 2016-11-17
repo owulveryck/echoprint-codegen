@@ -1,0 +1,9 @@
+/* File : Fingerprint.i */
+%module fingerprint
+
+%{
+#include "Fingerprint.h"
+%}
+
+/* Let's just grab the original header file here */
+%include "Fingerprint.h"

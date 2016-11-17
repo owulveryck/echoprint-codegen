@@ -13,7 +13,6 @@
 #include "Fingerprint.h"
 #include "Whitening.h"
 #include "SubbandAnalysis.h"
-#include "Fingerprint.h"
 #include "Common.h"
 
 #include "Base64.h"
