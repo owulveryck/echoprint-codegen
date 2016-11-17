@@ -41,10 +41,12 @@ func NewWhitening(pSamples *[]float32, numSamples uint64) *Whitening {
 }
 
 // Compute the result
-func (w *Whitening) Compute() {}
+func (w *Whitening) Compute() {
+	w.computeBlock(0, len(w.pSamples))
+}
 
-// ComputeBlock does whitene the block of w starting at position
-func (w *Whitening) ComputeBlock(start, blockSize int) {
+// computeBlock does whitene the block of w starting at position
+func (w *Whitening) computeBlock(start, blockSize int) {
 	// calculate autocorrelation of current block
 	for i := 0; i <= p; i++ {
 		var acc float32

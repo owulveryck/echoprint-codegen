@@ -16,5 +16,5 @@ func main() {
 		log.Fatal(err)
 	}
 	w := whitening.NewWhitening(&data, uint64(n))
-	w.ComputeBlock(0, n)
+	w.Compute()
 }

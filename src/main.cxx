@@ -116,7 +116,7 @@ codegen_response_t *codegen_file(char* filename, int start_offset, int duration,
     response->error = NULL;
     response->codegen = NULL;
 
-    auto_ptr<FfmpegStreamInput> pAudio(new FfmpegStreamInput());
+    auto_ptr<avconvStreamInput> pAudio(new avconvStreamInput());
     pAudio->ProcessFile(filename, start_offset, duration);
 
     if (pAudio.get() == NULL) { // Unable to decode!
