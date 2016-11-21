@@ -19,17 +19,18 @@ import (
 
 // A Reader implements the io.Reader
 type Reader struct {
-	r        io.Reader
-	whitened []float32 // The result of the signal whitened
+	r io.Reader
 }
 
 const (
-	p     = 40  // 40-pole LPC filter
-	t     = 8.0 // decay constant
-	alpha = 1.0 / t
+	lpcOrder = 40  // 40-pole LPC filter
+	t        = 8.0 // decay constant
+	alpha    = 1.0 / t
 )
 
 // NewReader returns a new Reader reading from r.
+// the information expected through r is PCM signed 16 bit flow
+// rated at 11025 and ordered in little endian
 func NewReader(r io.Reader) *Reader {
 	return &Reader{
 		r: r,
@@ -61,13 +62,39 @@ func NewReader(r io.Reader) *Reader {
 // Callers should treat a return of 0 and nil as indicating that
 // nothing happened; in particular it does not indicate EOF.
 func (r *Reader) Read(p []byte) (int, error) {
-	return 0, nil
+	var correlation []float32
+	blockSize := len(p) / 2
+	data := make([]int16, blockSize)
+	// loop until EOF
+	if blockSize > 0 {
+		// Read data as a byte array
+		err := binary.Read(r.r, binary.LittleEndian, data)
+		if err != nil {
+			if err != io.EOF {
+				return 0, err
+			}
+		}
+		// calculate autocorrelation of current block
+		for i := 0; i <= lpcOrder; i++ {
+			// sum is the autocorrelation value for timelapse i
+			var sum float32
+			for j := i; j < blockSize; j++ {
+				sum += float32(data[j] * data[j-i])
+			}
+			// smoothed update
+			correlation[i] = alpha * sum
+		}
+
+	}
+	return blockSize * 2, nil
 }
+
+/*
 
 // Compute the result and returns the number of segment processed
 func (r *Reader) Compute() (int, error) {
 	i := 0
-	n := 100000
+	n := 10000
 	data := make([]float32, n)
 	for {
 		// Read the flow from stdin
@@ -149,3 +176,4 @@ func (r *Reader) computeBlock(data []float32, offset int) {
 		xo[i] = data[blockSize-1-p+i]
 	}
 }
+*/
