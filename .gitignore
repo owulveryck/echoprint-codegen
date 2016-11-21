@@ -3,3 +3,5 @@
 *.so
 *.so.*
 echoprint-codegen
+samples/*pcm
+samples/*raw
