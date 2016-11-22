@@ -4,11 +4,22 @@ import (
 	"encoding/binary"
 	"github.com/owulveryck/echoprint-codegen/whitening"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
+	"testing"
 )
 
+func TestReader(t *testing.T) {
+	file, err := os.Open("../samples/Largo+from+-Concerto-No5_JS_Bach.pcm")
+	if err != nil {
+		t.Skipf("Cannot open sample file", err)
+	}
+	white := whitening.NewReader(file, 1, 11025, 16, binary.LittleEndian)
+	io.Copy(ioutil.Discard, white)
+
+}
 func ExampleReader_Read() {
 	file, err := os.Open("../samples/Largo+from+-Concerto-No5_JS_Bach.pcm")
 	if err != nil {
