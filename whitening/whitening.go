@@ -13,6 +13,7 @@
 package whitening
 
 import (
+	"bytes"
 	"encoding/binary"
 	"io"
 )
@@ -71,6 +72,7 @@ func NewReader(r io.Reader, channels, rate, bits int, byteOrder binary.ByteOrder
 // rated at 11025 and ordered in little endian
 func (r *Reader) Read(p []byte) (int, error) {
 	var correlation []float32
+	correlation = make([]float32, lpcOrder+1)
 	blockSize := len(p) / 2
 	data := make([]int16, blockSize)
 	// loop until EOF
@@ -92,6 +94,10 @@ func (r *Reader) Read(p []byte) (int, error) {
 			// smoothed update
 			correlation[i] = alpha * sum
 		}
+		// write data back in the buffer
+		buf := bytes.NewBuffer(p)
+		binary.Write(buf, binary.LittleEndian, data)
+		p = buf.Bytes()
 	}
 	return blockSize * 2, nil
 }
