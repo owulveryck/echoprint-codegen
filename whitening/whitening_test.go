@@ -16,10 +16,25 @@ func TestReader(t *testing.T) {
 	if err != nil {
 		t.Skipf("Cannot open sample file", err)
 	}
+	defer file.Close()
 	white := whitening.NewReader(file, 1, 11025, 16, binary.LittleEndian)
 	io.Copy(ioutil.Discard, white)
+}
+
+func BenchmarkReader(b *testing.B) {
+	file, err := os.Open("../samples/Largo+from+-Concerto-No5_JS_Bach.pcm")
+	if err != nil {
+		b.Skipf("Cannot open sample file", err)
+	}
+	defer file.Close()
+	for n := 0; n < b.N; n++ {
+
+		white := whitening.NewReader(file, 1, 11025, 16, binary.LittleEndian)
+		io.Copy(ioutil.Discard, white)
+	}
 
 }
+
 func ExampleReader_Read() {
 	file, err := os.Open("../samples/Largo+from+-Concerto-No5_JS_Bach.pcm")
 	if err != nil {
@@ -42,6 +57,4 @@ func ExampleReader_Read() {
 
 	io.Copy(stdin, white)
 	subProcess.Wait()
-	// Output:
-
 }
