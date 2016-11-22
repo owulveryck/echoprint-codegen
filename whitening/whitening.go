@@ -19,7 +19,11 @@ import (
 
 // A Reader implements the io.Reader
 type Reader struct {
-	r io.Reader
+	r         io.Reader
+	channels  int
+	rate      int
+	bits      int
+	byteOrder binary.ByteOrder
 }
 
 const (
@@ -29,11 +33,13 @@ const (
 )
 
 // NewReader returns a new Reader reading from r.
-// the information expected through r is PCM signed 16 bit flow
-// rated at 11025 and ordered in little endian
-func NewReader(r io.Reader) *Reader {
+func NewReader(r io.Reader, channels, rate, bits int, byteOrder binary.ByteOrder) *Reader {
 	return &Reader{
-		r: r,
+		r:         r,
+		channels:  channels,
+		rate:      rate,
+		bits:      bits,
+		byteOrder: byteOrder,
 	}
 }
 
@@ -61,6 +67,8 @@ func NewReader(r io.Reader) *Reader {
 // zero byte count with a nil error, except when len(p) == 0.
 // Callers should treat a return of 0 and nil as indicating that
 // nothing happened; in particular it does not indicate EOF.
+// the information expected through r is PCM signed 16 bit flow
+// rated at 11025 and ordered in little endian
 func (r *Reader) Read(p []byte) (int, error) {
 	var correlation []float32
 	blockSize := len(p) / 2
@@ -84,7 +92,6 @@ func (r *Reader) Read(p []byte) (int, error) {
 			// smoothed update
 			correlation[i] = alpha * sum
 		}
-
 	}
 	return blockSize * 2, nil
 }
