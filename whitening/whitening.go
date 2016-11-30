@@ -19,10 +19,14 @@ import (
 )
 
 const (
-	size = 10000 // default buffer size
+	lpcOrder                 = 40  // 40-pole LPC filter
+	t                        = 8.0 // decay constant
+	alpha                    = 1.0 / t
+	size                     = 10000 // default buffer size
+	maxConsecutiveEmptyReads = 100
 )
 
-// Writer implements buffering for an io.Writer object.
+// Writer implements Whitening for an io.Writer object.
 // If an error occurs writing to a Writer, no more data will be
 // accepted and all subsequent writes will return the error.
 // After all data has been written, the client should call the
@@ -35,7 +39,7 @@ type Writer struct {
 	wr  io.Writer
 }
 
-// NewWriter ...
+// NewWriter returns a new Writer whose buffer has the default size.
 func NewWriter(w io.Writer) *Writer {
 	return &Writer{
 		buf: make([]byte, size),
@@ -52,6 +56,33 @@ func (b *Writer) Flush() error {
 	return err
 }
 
+func computeBlock(p []byte) []byte {
+	buf := bytes.NewReader(p)
+	blockSize := len(p) / 2
+	var correlation []float32
+	correlation = make([]float32, lpcOrder+1)
+	var data = make([]int16, blockSize)
+	// loop until EOF
+	// Read data as a byte array
+	binary.Read(buf, binary.LittleEndian, data)
+	// calculate autocorrelation of current block
+	for i := 0; i <= lpcOrder; i++ {
+		// sum is the autocorrelation value for timelapse i
+		var sum float32
+		for j := i; j < blockSize; j++ {
+			sum += float32(data[j] * data[j-i])
+		}
+		// smoothed update
+		correlation[i] = alpha * sum
+	}
+
+	// write data back in the buffer
+	var output []byte
+	o := bytes.NewBuffer(output)
+	binary.Write(o, binary.LittleEndian, data)
+	return o.Bytes()
+}
+
 func (b *Writer) Write(p []byte) (nn int, err error) {
 	for len(p) > b.Available() && b.err == nil {
 		var n int
@@ -59,7 +90,7 @@ func (b *Writer) Write(p []byte) (nn int, err error) {
 			// Large write, empty buffer.
 			// Write directly from p to avoid copy.
 			// TODO: implement the algorithm
-			n, b.err = b.wr.Write(p)
+			n, b.err = b.wr.Write(computeBlock(p))
 		} else {
 			n = copy(b.buf[b.n:], p)
 			b.n += n
@@ -84,13 +115,12 @@ func (b *Writer) flush() error {
 	if b.n == 0 {
 		return nil
 	}
-	n, err := b.wr.Write(b.buf[0:b.n])
+	n, err := b.wr.Write(computeBlock(b.buf[0:b.n]))
 	if n < b.n && err == nil {
 		err = io.ErrShortWrite
 	}
 	if err != nil {
 		if n > 0 && n < b.n {
-			// TODO : Comhpte
 			copy(b.buf[0:b.n-n], b.buf[n:b.n])
 		}
 		b.n -= n
@@ -104,114 +134,49 @@ func (b *Writer) flush() error {
 // Buffered returns the number of bytes that have been written into the current buffer.
 func (b *Writer) Buffered() int { return b.n }
 
-// ----------------------------------
-
-// A Reader implements the io.Reader
-type Reader struct {
-	r         io.Reader
-	channels  int
-	rate      int
-	bits      int
-	byteOrder binary.ByteOrder
-}
-
-const (
-	lpcOrder = 40  // 40-pole LPC filter
-	t        = 8.0 // decay constant
-	alpha    = 1.0 / t
-)
-
-// NewReader returns a new Reader reading from r.
-func NewReader(r io.Reader, channels, rate, bits int, byteOrder binary.ByteOrder) *Reader {
-	return &Reader{
-		r:         r,
-		channels:  channels,
-		rate:      rate,
-		bits:      bits,
-		byteOrder: byteOrder,
+// ReadFrom implements io.ReaderFrom.
+func (b *Writer) ReadFrom(r io.Reader) (n int64, err error) {
+	if b.Buffered() == 0 {
+		if w, ok := b.wr.(io.ReaderFrom); ok {
+			return w.ReadFrom(r)
+		}
 	}
-}
-
-// Read reads up to len(p) bytes into p. It returns the number of bytes
-// read (0 <= n <= len(p)) and any error encountered. Even if Read
-// returns n < len(p), it may use all of p as scratch space during the call.
-// If some data is available but not len(p) bytes, Read conventionally
-// returns what is available instead of waiting for more.
-//
-// When Read encounters an error or end-of-file condition after
-// successfully reading n > 0 bytes, it returns the number of
-// bytes read. It may return the (non-nil) error from the same call
-// or return the error (and n == 0) from a subsequent call.
-// An instance of this general case is that a Reader returning
-// a non-zero number of bytes at the end of the input stream may
-// return either err == EOF or err == nil. The next Read should
-// return 0, EOF.
-//
-// Callers should always process the n > 0 bytes returned before
-// considering the error err. Doing so correctly handles I/O errors
-// that happen after reading some bytes and also both of the
-// allowed EOF behaviors.
-//
-// Implementations of Read are discouraged from returning a
-// zero byte count with a nil error, except when len(p) == 0.
-// Callers should treat a return of 0 and nil as indicating that
-// nothing happened; in particular it does not indicate EOF.
-// the information expected through r is PCM signed 16 bit flow
-// rated at 11025 and ordered in little endian
-func (r *Reader) Read(p []byte) (int, error) {
-	var correlation []float32
-	correlation = make([]float32, lpcOrder+1)
-	blockSize := len(p) / 2
-	data := make([]int16, blockSize)
-	// loop until EOF
-	if blockSize > 0 {
-		// Read data as a byte array
-		err := binary.Read(r.r, binary.LittleEndian, data)
+	var m int
+	for {
+		if b.Available() == 0 {
+			if err1 := b.flush(); err1 != nil {
+				return n, err1
+			}
+		}
+		nr := 0
+		for nr < maxConsecutiveEmptyReads {
+			m, err = r.Read(b.buf[b.n:])
+			if m != 0 || err != nil {
+				break
+			}
+			nr++
+		}
+		if nr == maxConsecutiveEmptyReads {
+			return n, io.ErrNoProgress
+		}
+		b.n += m
+		n += int64(m)
 		if err != nil {
-			if err != io.EOF {
-				return 0, err
-			}
+			break
 		}
-		// calculate autocorrelation of current block
-		for i := 0; i <= lpcOrder; i++ {
-			// sum is the autocorrelation value for timelapse i
-			var sum float32
-			for j := i; j < blockSize; j++ {
-				sum += float32(data[j] * data[j-i])
-			}
-			// smoothed update
-			correlation[i] = alpha * sum
-		}
-		// write data back in the buffer
-		buf := bytes.NewBuffer(p)
-		binary.Write(buf, binary.LittleEndian, data)
-		p = buf.Bytes()
 	}
-	return blockSize * 2, nil
+	if err == io.EOF {
+		// If we filled the buffer exactly, flush preemptively.
+		if b.Available() == 0 {
+			err = b.flush()
+		} else {
+			err = nil
+		}
+	}
+	return n, err
 }
 
 /*
-
-// Compute the result and returns the number of segment processed
-func (r *Reader) Compute() (int, error) {
-	i := 0
-	n := 10000
-	data := make([]float32, n)
-	for {
-		// Read the flow from stdin
-		if err := binary.Read(r.r, binary.LittleEndian, data); err != nil {
-			if err != io.EOF {
-				return n * i, err
-			}
-			break
-		}
-
-		r.computeBlock(data, n*i)
-		i++
-	}
-	return n * i, nil
-}
-
 // computeBlock does whitene the block of w starting at position
 func (r *Reader) computeBlock(data []float32, offset int) {
 	// Increase the capacity of whitened

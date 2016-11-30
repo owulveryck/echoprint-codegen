@@ -1,10 +1,7 @@
 package whitening_test
 
 import (
-	"encoding/binary"
 	"github.com/owulveryck/echoprint-codegen/whitening"
-	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -17,8 +14,6 @@ func TestReader(t *testing.T) {
 		t.Skipf("Cannot open sample file", err)
 	}
 	defer file.Close()
-	white := whitening.NewReader(file, 1, 11025, 16, binary.LittleEndian)
-	io.Copy(ioutil.Discard, white)
 }
 
 func BenchmarkReader(b *testing.B) {
@@ -29,18 +24,15 @@ func BenchmarkReader(b *testing.B) {
 	defer file.Close()
 	for n := 0; n < b.N; n++ {
 
-		white := whitening.NewReader(file, 1, 11025, 16, binary.LittleEndian)
-		io.Copy(ioutil.Discard, white)
 	}
 
 }
 
-func ExampleReader_Read() {
+func ExampleWriter() {
 	file, err := os.Open("../samples/Largo+from+-Concerto-No5_JS_Bach.pcm")
 	if err != nil {
 		log.Fatal("Cannot open test file: ", err)
 	}
-	white := whitening.NewReader(file, 1, 11025, 16, binary.LittleEndian)
 	subProcess := exec.Command("play", "-t", "raw", "-r", "11025", "-e", "signed", "-b", "16", "-c", "1", "-")
 	stdin, err := subProcess.StdinPipe()
 	if err != nil {
@@ -55,6 +47,8 @@ func ExampleReader_Read() {
 		log.Fatal(err)
 	}
 
-	io.Copy(stdin, white)
+	w := whitening.NewWriter(stdin)
+	w.ReadFrom(file)
 	subProcess.Wait()
+	// Output:
 }
