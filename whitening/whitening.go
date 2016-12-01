@@ -1,8 +1,13 @@
 // Package whitening computes a whitening on a PCM signal.
 // The algorithm is a simple retranscription from the echoprint-codegen C++
-// implementation to golang. I've add some readers to be more idiomatic.
-// The copyright may goes to the Echo Nest Corporation for the algorithm
-// and to Olivier Wulveryck for the go implementation..
+// implementation to golang.
+//
+// The code is a copied from the bufio package.
+// It implements a buffered writer which computes the whitening filter just
+// before flushing its data to the next writer.
+//
+// The copyright goes to the Echo Nest Corporation for the algorithm
+// and to the Go team and Olivier Wulveryck for the go implementation.
 //
 // Explanation from the paper "ECHOPRINT - AN OPEN MUSIC IDENTIFICATION SERVICE"
 // (http://static.echonest.com/echoprint_ismir.pdf):
@@ -32,6 +37,7 @@ const (
 // After all data has been written, the client should call the
 // Flush method to guarantee all data has been forwarded to
 // the underlying io.Writer.
+// The data in the buffer is computed before beeing flushed to the io.writer
 type Writer struct {
 	err error
 	buf []byte
@@ -59,9 +65,10 @@ func (b *Writer) Flush() error {
 func computeBlock(p []byte) []byte {
 	buf := bytes.NewReader(p)
 	blockSize := len(p) / 2
-	var correlation []float32
-	correlation = make([]float32, lpcOrder+1)
+	var R []float32 // Short time autocorrelation vector
+	R = make([]float32, lpcOrder+1)
 	var data = make([]int16, blockSize)
+	var out = make([]int16, blockSize)
 	// loop until EOF
 	// Read data as a byte array
 	binary.Read(buf, binary.LittleEndian, data)
@@ -73,13 +80,48 @@ func computeBlock(p []byte) []byte {
 			sum += float32(data[j] * data[j-i])
 		}
 		// smoothed update
-		correlation[i] = alpha * sum
+		R[i] = alpha * sum
+	}
+	// calculate new filter coefficients
+	// Durbin's recursion, per p. 411 of Rabiner & Schafer 1978
+	var E float32 // Error
+	var ai = make([]int16, blockSize)
+	for i := 1; i < lpcOrder; i++ {
+		var sumAlphaR float32
+		sumAlphaR = 0
+		for j := 1; j < i; j++ {
+			sumAlphaR += float32(ai[j]) * R[i-j]
+		}
+		ki := int16((R[i] - sumAlphaR) / E)
+		ai[i] = ki
+		for j := 1; j <= i/2; j++ {
+			aj := ai[j]
+			aimj := ai[i-j]
+			ai[j] = aj - ki*aimj
+			ai[i-j] = aimj - ki*aj
+		}
+		E = (1 - float32(ki*ki)) * E
+	}
+	// Calculate the new output
+	for i := 0; i < blockSize; i++ {
+		acc := data[i]
+		minip := i
+		if lpcOrder < minip {
+			minip = lpcOrder
+		}
+		for j := i + 1; j <= lpcOrder; j++ {
+			acc -= ai[j]
+		}
+		for j := 1; j <= minip; j++ {
+			acc -= ai[j] * data[i-j]
+		}
+		out[i] = acc
 	}
 
 	// write data back in the buffer
 	var output []byte
 	o := bytes.NewBuffer(output)
-	binary.Write(o, binary.LittleEndian, data)
+	binary.Write(o, binary.LittleEndian, out)
 	return o.Bytes()
 }
 
