@@ -1,7 +1,6 @@
 package fingerprint
 
 import (
-	"fmt"
 	"github.com/gonum/matrix/mat64"
 	"math"
 )
@@ -54,8 +53,4 @@ func NewFingerprinter() *Fingerprinter {
 		mr: mr,
 		mi: mi,
 	}
-}
-
-func main() {
-	fmt.Println("vim-go")
 }
