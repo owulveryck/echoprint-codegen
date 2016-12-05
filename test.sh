@@ -1,1 +1,3 @@
-mpg123 --quiet --singlemix --stdout --rate 11025 samples/Allegro\ from\ Duet\ in\ C\ Major.mp3 | ./echoprint-codegen
+#!/bin/sh
+
+rec -t raw -r 11025 -e signed -b 16 -c 1 - | go run main.go | play -t raw -r 11025 -e signed -b 16 -c 1 -

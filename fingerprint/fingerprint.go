@@ -1,4 +1,4 @@
-package fingerprintn
+package fingerprint
 
 import "fmt"
 
