@@ -1,11 +1,13 @@
 package main
 
 import (
+	"github.com/owulveryck/echoprint-codegen/dsp"
 	"github.com/owulveryck/echoprint-codegen/whitening"
 	"os"
 )
 
 func main() {
-	w := whitening.NewWriter(os.Stdout)
+	s := whitening.NewWhitener()
+	w := dsp.NewWriter(os.Stdout, s)
 	w.ReadFrom(os.Stdin)
 }

@@ -1,6 +1,7 @@
 package whitening_test
 
 import (
+	"github.com/owulveryck/echoprint-codegen/dsp"
 	"github.com/owulveryck/echoprint-codegen/whitening"
 	"log"
 	"os"
@@ -47,7 +48,8 @@ func ExampleWriter() {
 		log.Fatal(err)
 	}
 
-	w := whitening.NewWriter(stdin)
+	s := whitening.NewWhitener()
+	w := dsp.NewWriter(stdin, s)
 	w.ReadFrom(file)
 	subProcess.Wait()
 	// Output:
