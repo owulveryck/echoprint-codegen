@@ -35,8 +35,10 @@ var (
 
 // Fingerprinter implements the DSP interface
 type Fingerprinter struct {
-	mr *mat64.Dense
-	mi *mat64.Dense
+	mr        *mat64.Dense
+	mi        *mat64.Dense
+	numFrames int64
+	data      *mat64.Dense
 }
 
 // NewFingerprinter returns a fingerprinter
@@ -53,4 +55,10 @@ func NewFingerprinter() *Fingerprinter {
 		mr: mr,
 		mi: mi,
 	}
+}
+
+// Compute the fingerprint
+func (f Fingerprinter) Compute([]byte) []byte {
+	var output []byte
+	return output
 }
