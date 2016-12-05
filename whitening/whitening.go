@@ -43,6 +43,7 @@ type Writer struct {
 	buf []byte
 	n   int
 	wr  io.Writer
+	X   []int16
 }
 
 // NewWriter returns a new Writer whose buffer has the default size.
@@ -50,6 +51,7 @@ func NewWriter(w io.Writer) *Writer {
 	return &Writer{
 		buf: make([]byte, size),
 		wr:  w,
+		X:   make([]int16, lpcOrder+1),
 	}
 }
 
@@ -62,11 +64,12 @@ func (b *Writer) Flush() error {
 	return err
 }
 
-func computeBlock(p []byte) []byte {
+func (b *Writer) computeBlock(p []byte) []byte {
 	buf := bytes.NewReader(p)
 	blockSize := len(p) / 2
 	var R []float32 // Short time autocorrelation vector
 	R = make([]float32, lpcOrder+1)
+	R[0] = 0.001
 	var data = make([]int16, blockSize)
 	var out = make([]int16, blockSize)
 	// loop until EOF
@@ -80,13 +83,14 @@ func computeBlock(p []byte) []byte {
 			sum += float32(data[j] * data[j-i])
 		}
 		// smoothed update
-		R[i] = alpha * sum
+		R[i] = alpha * (sum - R[i])
 	}
 	// calculate new filter coefficients
 	// Durbin's recursion, per p. 411 of Rabiner & Schafer 1978
 	var E float32 // Error
+	E = R[0]
 	var ai = make([]int16, blockSize)
-	for i := 1; i < lpcOrder; i++ {
+	for i := 1; i <= lpcOrder; i++ {
 		var sumAlphaR float32
 		sumAlphaR = 0
 		for j := 1; j < i; j++ {
@@ -110,7 +114,7 @@ func computeBlock(p []byte) []byte {
 			minip = lpcOrder
 		}
 		for j := i + 1; j <= lpcOrder; j++ {
-			acc -= ai[j]
+			acc -= ai[j] * b.X[lpcOrder+i-j]
 		}
 		for j := 1; j <= minip; j++ {
 			acc -= ai[j] * data[i-j]
@@ -118,6 +122,10 @@ func computeBlock(p []byte) []byte {
 		out[i] = acc
 	}
 
+	// save last few frames of input
+	for i := 0; i <= lpcOrder; i++ {
+		b.X[i] = data[blockSize-1-lpcOrder+i]
+	}
 	// write data back in the buffer
 	var output []byte
 	o := bytes.NewBuffer(output)
@@ -132,7 +140,7 @@ func (b *Writer) Write(p []byte) (nn int, err error) {
 			// Large write, empty buffer.
 			// Write directly from p to avoid copy.
 			// TODO: implement the algorithm
-			n, b.err = b.wr.Write(computeBlock(p))
+			n, b.err = b.wr.Write(b.computeBlock(p))
 		} else {
 			n = copy(b.buf[b.n:], p)
 			b.n += n
@@ -157,7 +165,7 @@ func (b *Writer) flush() error {
 	if b.n == 0 {
 		return nil
 	}
-	n, err := b.wr.Write(computeBlock(b.buf[0:b.n]))
+	n, err := b.wr.Write(b.computeBlock(b.buf[0:b.n]))
 	if n < b.n && err == nil {
 		err = io.ErrShortWrite
 	}
