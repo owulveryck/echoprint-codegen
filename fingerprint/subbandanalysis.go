@@ -1,6 +1,9 @@
 package fingerprint
 
 import (
+	"bytes"
+	"encoding/binary"
+	"errors"
 	"github.com/gonum/matrix/mat64"
 	"math"
 )
@@ -58,7 +61,48 @@ func NewFingerprinter() *Fingerprinter {
 }
 
 // Compute the fingerprint
-func (f Fingerprinter) Compute([]byte) []byte {
+func (f Fingerprinter) Compute(p []byte) []byte {
+	buf := bytes.NewReader(p)
+	numSamples := len(p) / 2
+	var samples = make([]int16, numSamples)
+	var out = make([]int16, numSamples)
+	// loop until EOF
+	// Read data as a byte array
+	binary.Read(buf, binary.LittleEndian, samples)
+
+	z := make([]float32, cLen)
+	y := make([]float32, mCols)
+
+	numFrames := (numSamples - cLen + 1) / subbands
+	if numFrames == 0 {
+		panic(errors.New("No frames to compute"))
+	}
+	data := mat64.NewDense(subbands, numFrames, nil)
+	for t := 0; t < numFrames; t++ {
+		for i := 0; i < cLen; i++ {
+			z[i] = float32(samples[t*subbands+i]) * c[i]
+		}
+		for i := 0; i < mCols; i++ {
+			y[i] = z[i]
+		}
+		for i := 0; i < mCols; i++ {
+			for j := 1; j < mRows; j++ {
+				y[i] += z[i+mCols*j]
+			}
+		}
+		for i := 0; i < mRows; i++ {
+			var dr, di float32
+			for j := 0; j < mCols; j++ {
+				dr += float32(f.mr.At(i, j)) * y[j]
+				di -= float32(f.mi.At(i, j)) * y[j]
+			}
+			data.Set(i, t, float64(dr*dr+di*di))
+		}
+	}
+
+	// write data back in the buffer
 	var output []byte
-	return output
+	o := bytes.NewBuffer(output)
+	binary.Write(o, binary.LittleEndian, out)
+	return o.Bytes()
 }
