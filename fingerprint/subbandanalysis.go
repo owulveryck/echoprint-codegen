@@ -28,7 +28,9 @@ const (
 )
 
 var (
-	c = []float32{
+	mr *mat64.Dense
+	mi *mat64.Dense
+	c  = []float32{
 		0.000000477, 0.000000954, 0.000001431, 0.000002384, 0.000003815, 0.000006199, 0.000009060, 0.000013828,
 		0.000019550, 0.000027657, 0.000037670, 0.000049591, 0.000062943, 0.000076771, 0.000090599, 0.000101566,
 		-0.000108242, -0.000106812, -0.000095367, -0.000069618, -0.000027180, 0.000034332, 0.000116348, 0.000218868,
@@ -48,6 +50,18 @@ var (
 	}
 )
 
+func init() {
+	mr = mat64.NewDense(mRows, mCols, nil)
+	mi = mat64.NewDense(mRows, mCols, nil)
+	for i := 0; i < mRows; i++ {
+		for k := 0; k < mCols; k++ {
+			mr.Set(i, k, math.Cos(float64((2*i+1)*(k-4))*(math.Pi/16.0)))
+			mi.Set(i, k, math.Sin(float64((2*i+1)*(k-4))*(math.Pi/16.0)))
+		}
+	}
+
+}
+
 // Code holds the couple time/Hash
 // the time represent the time for onset ms quantized
 type Code struct {
@@ -57,38 +71,21 @@ type Code struct {
 
 // Fingerprinter implements the DSP interface
 type Fingerprinter struct {
-	mr        *mat64.Dense
-	mi        *mat64.Dense
 	numFrames int64
 	data      *mat64.Dense
 	Hash      chan Code
+	samples   *[]int16
 }
 
 // NewFingerprinter returns a fingerprinter
 func NewFingerprinter() *Fingerprinter {
-	mr := mat64.NewDense(mRows, mCols, nil)
-	mi := mat64.NewDense(mRows, mCols, nil)
-	for i := 0; i < mRows; i++ {
-		for k := 0; k < mCols; k++ {
-			mr.Set(i, k, math.Cos(float64((2*i+1)*(k-4))*(math.Pi/16.0)))
-			mi.Set(i, k, math.Sin(float64((2*i+1)*(k-4))*(math.Pi/16.0)))
-		}
-	}
 	return &Fingerprinter{
-		mr:   mr,
-		mi:   mi,
 		Hash: make(chan Code),
 	}
 }
 
-// Compute the signal and returns the fingerprints
-func (f Fingerprinter) Compute(p []byte) []byte {
-	buf := bytes.NewReader(p)
-	numSamples := len(p) / 2
-	var samples = make([]int16, numSamples)
-	// Read data as a byte array
-	binary.Read(buf, binary.LittleEndian, samples)
-
+func subbandAnalysis(samples *[]int16) *mat64.Dense {
+	numSamples := len(*samples)
 	z := make([]float32, cLen)
 	y := make([]float32, mCols)
 
@@ -99,7 +96,7 @@ func (f Fingerprinter) Compute(p []byte) []byte {
 	data := mat64.NewDense(subbands, numFrames, nil)
 	for t := 0; t < numFrames; t++ {
 		for i := 0; i < cLen; i++ {
-			z[i] = float32(samples[t*subbands+i]) * c[i]
+			z[i] = float32((*samples)[t*subbands+i]) * c[i]
 		}
 		//for i := 0; i < mCols; i++ {
 		//	y[i] = z[i]
@@ -113,12 +110,23 @@ func (f Fingerprinter) Compute(p []byte) []byte {
 		for i := 0; i < mRows; i++ {
 			var dr, di float32
 			for j := 0; j < mCols; j++ {
-				dr += float32(f.mr.At(i, j)) * y[j]
-				di -= float32(f.mi.At(i, j)) * y[j]
+				dr += float32(mr.At(i, j)) * y[j]
+				di -= float32(mi.At(i, j)) * y[j]
 			}
 			data.Set(i, t, float64(dr*dr+di*di))
 		}
 	}
+
+	return data
+}
+
+// Compute the signal and returns the fingerprints
+func (f Fingerprinter) Compute(p []byte) []byte {
+	buf := bytes.NewReader(p)
+	numSamples := len(p) / 2
+	var samples = make([]int16, numSamples)
+	// Read data as a byte array
+	binary.Read(buf, binary.LittleEndian, samples)
 
 	// Fingerprinting
 	{
@@ -128,7 +136,7 @@ func (f Fingerprinter) Compute(p []byte) []byte {
 		var onsetCounterForBand *[]uint
 		//var onsetCount uint16
 		//onsetCount = adaptativeOnsets(345, out, onsetCounterForBand)
-		adaptativeOnsets(345, out, onsetCounterForBand)
+		adaptativeOnsets(345, out, onsetCounterForBand, &samples)
 		for band := 0; band < subbands; band++ {
 			if (*onsetCounterForBand)[band] > 2 {
 				for onset := 0; onset < int((*onsetCounterForBand)[band]-uint(2)); onset++ {
@@ -187,7 +195,15 @@ func (f Fingerprinter) Compute(p []byte) []byte {
 	return o.Bytes()
 }
 
-func adaptativeOnsets(int, *mat64.Dense, *[]uint) uint16 {
+func adaptativeOnsets(ttarg int, out *mat64.Dense, onsetCounterForBand *[]uint, samples *[]int16) uint16 {
+	//  E is a sgram-like matrix of energies.
+	var e float32
+	var bands, frames, i, j, k int
+	deadtime := 128
+	overfact := 1.1 // threshold relative to actual peak
+	onsetCounter := 0
+	E := subbandAnalysis(samples)
+	// Take successive stretches of 8 subband samples and sum their energy under a hann window, then hop by 4 samples (50% window overlap).
 	return 0
 }
 func quantizedTimeForFrameDelta(f uint) int {
