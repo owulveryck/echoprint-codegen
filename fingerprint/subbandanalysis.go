@@ -1,3 +1,15 @@
+// Package fingerprint does the fingerprinting;
+//
+// This file does the analisys as explained in the original paper (http://static.echonest.com/echoprint_ismir.pdf):
+//  Onset detection is performed independently in 8 frequency bands, corresponding to the
+// lowest 8 bands in the MPEG-Audio 32 band filterbank (hence, nominally spanning 0 to 5512.5 Hz).
+// The magnitude of the complex band-pass signal in each band is compared to
+// an exponentially-decaying threshold, and an onset recorded  when the signal exceeds the threshold,
+// at which point the threshold is increased to 1.05 x the new signal peak.
+//
+// The algorithm is copyrighted:
+//  echoprint-codegen
+//  Copyright 2011 The Echo Nest Corporation. All rights reserved.
 package fingerprint
 
 import (
@@ -36,12 +48,20 @@ var (
 	}
 )
 
+// Code holds the couple time/Hash
+// the time represent the time for onset ms quantized
+type Code struct {
+	Time int
+	Hash uint32
+}
+
 // Fingerprinter implements the DSP interface
 type Fingerprinter struct {
 	mr        *mat64.Dense
 	mi        *mat64.Dense
 	numFrames int64
 	data      *mat64.Dense
+	Hash      chan Code
 }
 
 // NewFingerprinter returns a fingerprinter
@@ -55,18 +75,17 @@ func NewFingerprinter() *Fingerprinter {
 		}
 	}
 	return &Fingerprinter{
-		mr: mr,
-		mi: mi,
+		mr:   mr,
+		mi:   mi,
+		Hash: make(chan Code),
 	}
 }
 
-// Compute the fingerprint
+// Compute the signal and returns the fingerprints
 func (f Fingerprinter) Compute(p []byte) []byte {
 	buf := bytes.NewReader(p)
 	numSamples := len(p) / 2
 	var samples = make([]int16, numSamples)
-	var out = make([]int16, numSamples)
-	// loop until EOF
 	// Read data as a byte array
 	binary.Read(buf, binary.LittleEndian, samples)
 
@@ -82,10 +101,11 @@ func (f Fingerprinter) Compute(p []byte) []byte {
 		for i := 0; i < cLen; i++ {
 			z[i] = float32(samples[t*subbands+i]) * c[i]
 		}
+		//for i := 0; i < mCols; i++ {
+		//	y[i] = z[i]
+		//}
 		for i := 0; i < mCols; i++ {
 			y[i] = z[i]
-		}
-		for i := 0; i < mCols; i++ {
 			for j := 1; j < mRows; j++ {
 				y[i] += z[i+mCols*j]
 			}
@@ -100,9 +120,83 @@ func (f Fingerprinter) Compute(p []byte) []byte {
 		}
 	}
 
+	// Fingerprinting
+	{
+		var out *mat64.Dense
+		//var actualCodes uint16
+		//actualCodes = 0
+		var onsetCounterForBand *[]uint
+		//var onsetCount uint16
+		//onsetCount = adaptativeOnsets(345, out, onsetCounterForBand)
+		adaptativeOnsets(345, out, onsetCounterForBand)
+		for band := 0; band < subbands; band++ {
+			if (*onsetCounterForBand)[band] > 2 {
+				for onset := 0; onset < int((*onsetCounterForBand)[band]-uint(2)); onset++ {
+					// What time was this onset at?
+					timeForOnsetMsQuantized := quantizedTimeForFrameAbsolute(out.At(band, onset))
+					var nhashes = 6
+					var p = make([][]uint, 2)
+					p[0] = make([]uint, nhashes)
+					p[1] = make([]uint, nhashes)
+					for i := 0; i < 6; i++ {
+						p[0][i] = 0
+						p[1][i] = 0
+					}
+					if onset == int((*onsetCounterForBand)[band])-4 {
+						nhashes = 3
+					}
+					if onset == int((*onsetCounterForBand)[band])-3 {
+						nhashes = 1
+					}
+					p[0][0] = uint(out.At(band, onset+1) - out.At(band, onset))
+					p[1][0] = uint(out.At(band, onset+2) - out.At(band, onset+1))
+					if nhashes > 1 {
+						p[0][1] = uint(out.At(band, onset+1) - out.At(band, onset))
+						p[1][1] = uint(out.At(band, onset+3) - out.At(band, onset+1))
+						p[0][2] = uint(out.At(band, onset+2) - out.At(band, onset))
+						p[1][2] = uint(out.At(band, onset+3) - out.At(band, onset+2))
+						if nhashes > 3 {
+							p[0][3] = uint(out.At(band, onset+1) - out.At(band, onset))
+							p[1][3] = uint(out.At(band, onset+4) - out.At(band, onset+1))
+							p[0][4] = uint(out.At(band, onset+2) - out.At(band, onset))
+							p[1][4] = uint(out.At(band, onset+4) - out.At(band, onset+2))
+							p[0][5] = uint(out.At(band, onset+3) - out.At(band, onset))
+							p[1][5] = uint(out.At(band, onset+4) - out.At(band, onset+3))
+						}
+					}
+					// For each pair emit a code
+					for k := 0; k < 6; k++ {
+						// Quantize the time deltas to 23ms
+						timeDelta0 := quantizedTimeForFrameDelta(p[0][k])
+						timeDelta1 := quantizedTimeForFrameDelta(p[1][k])
+						f.Hash <- Code{
+							Time: timeForOnsetMsQuantized,
+							Hash: hashFunc(timeDelta0, timeDelta1, band),
+						}
+					}
+				}
+			}
+		}
+	}
+
 	// write data back in the buffer
+	var out = make([]int16, numSamples)
 	var output []byte
 	o := bytes.NewBuffer(output)
 	binary.Write(o, binary.LittleEndian, out)
 	return o.Bytes()
+}
+
+func adaptativeOnsets(int, *mat64.Dense, *[]uint) uint16 {
+	return 0
+}
+func quantizedTimeForFrameDelta(f uint) int {
+	return 0
+}
+func quantizedTimeForFrameAbsolute(f float64) int {
+	return 0
+}
+func hashFunc(t0, t1, band int) uint32 {
+	var out uint32
+	return out
 }
