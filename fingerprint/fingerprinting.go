@@ -129,7 +129,7 @@ func (f Fingerprinter) Compute(p []byte) []byte {
 	binary.Read(buf, binary.LittleEndian, samples)
 
 	// Fingerprinting
-	{
+	go func() {
 		var out *mat64.Dense
 		//var actualCodes uint16
 		//actualCodes = 0
@@ -185,24 +185,22 @@ func (f Fingerprinter) Compute(p []byte) []byte {
 				}
 			}
 		}
-	}
+	}()
 
-	// write data back in the buffer
-	var out = make([]int16, numSamples)
-	var output []byte
-	o := bytes.NewBuffer(output)
-	binary.Write(o, binary.LittleEndian, out)
-	return o.Bytes()
+	// return the data unmodified
+	return p
 }
 
 func adaptativeOnsets(ttarg int, out *mat64.Dense, onsetCounterForBand *[]uint, samples *[]int16) uint16 {
 	//  E is a sgram-like matrix of energies.
-	var e float32
-	var bands, frames, i, j, k int
-	deadtime := 128
-	overfact := 1.1 // threshold relative to actual peak
-	onsetCounter := 0
-	E := subbandAnalysis(samples)
+	/*
+		var e float32
+		var bands, frames, i, j, k int
+		deadtime := 128
+		overfact := 1.1 // threshold relative to actual peak
+		onsetCounter := 0
+		E := subbandAnalysis(samples)
+	*/
 	// Take successive stretches of 8 subband samples and sum their energy under a hann window, then hop by 4 samples (50% window overlap).
 	return 0
 }
