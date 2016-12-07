@@ -1,4 +1,4 @@
-// Package fingerprint does the fingerprinting;
+// Package fingerprint does the fingerprinting (obviously);
 //
 // This file does the analisys as explained in the original paper (http://static.echonest.com/echoprint_ismir.pdf):
 //  Onset detection is performed independently in 8 frequency bands, corresponding to the
@@ -98,9 +98,6 @@ func subbandAnalysis(samples *[]int16) *mat64.Dense {
 		for i := 0; i < cLen; i++ {
 			z[i] = float32((*samples)[t*subbands+i]) * c[i]
 		}
-		//for i := 0; i < mCols; i++ {
-		//	y[i] = z[i]
-		//}
 		for i := 0; i < mCols; i++ {
 			y[i] = z[i]
 			for j := 1; j < mRows; j++ {
@@ -199,8 +196,14 @@ func adaptativeOnsets(ttarg int, out *mat64.Dense, onsetCounterForBand *[]uint, 
 		deadtime := 128
 		overfact := 1.1 // threshold relative to actual peak
 		onsetCounter := 0
-		E := subbandAnalysis(samples)
 	*/
+	E := subbandAnalysis(samples)
+	var ham = make([]float64, 8)
+	nsm := 8
+	for i := 0; i != nsm; i++ {
+		ham[i] = 0.5 - 0.5*math.Cos(float64((2.0*math.Pi/float32(nsm)-1)*float32(i)))
+	}
+
 	// Take successive stretches of 8 subband samples and sum their energy under a hann window, then hop by 4 samples (50% window overlap).
 	return 0
 }
